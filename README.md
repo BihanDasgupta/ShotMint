@@ -1,2 +1,2 @@
 # ShotMint
-An RNN-Powered NBA Prediction & Betting Assistant dApp 🏀💸+
+An RNN-Powered NBA Prediction & Betting Assistant dApp 🏀💸
