@@ -13,9 +13,12 @@ import os
 app = FastAPI(title="ShotMint API", version="1.0.0")
 
 # CORS middleware for frontend integration
+# Get allowed origins from environment variable, fallback to all for development
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",") if os.getenv("ALLOWED_ORIGINS") else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your frontend domain
+    allow_origins=allowed_origins,  # In production, set ALLOWED_ORIGINS env var
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -224,5 +227,6 @@ async def get_upcoming_games(days_ahead: int = 7):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
