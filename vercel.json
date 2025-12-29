@@ -1,0 +1,8 @@
+{
+  "buildCommand": "cd dapp/frontend && npm install && npm run build",
+  "outputDirectory": "dapp/frontend/.next",
+  "installCommand": "cd dapp/frontend && npm install",
+  "framework": "nextjs",
+  "rootDirectory": "dapp/frontend"
+}
+
