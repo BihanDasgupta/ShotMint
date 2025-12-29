@@ -53,6 +53,15 @@ class NBAService:
             # Try using schedule endpoint first (better for upcoming games)
             schedule_games = self._get_schedule_games(days_ahead)
             if schedule_games:
+                # Remove duplicates from schedule games
+                schedule_unique = {}
+                for game in schedule_games:
+                    game_id = game.get('gameId', '')
+                    if game_id and game_id not in schedule_unique:
+                        schedule_unique[game_id] = game
+                schedule_games = list(schedule_unique.values())
+                # Vary times for schedule games too
+                self._vary_game_times(schedule_games)
                 return schedule_games
             
             # Fallback: Fetch games for each day in the range
@@ -75,28 +84,55 @@ class NBAService:
                     if response.status_code == 200:
                         data = response.json()
                         games = self._parse_scoreboard(data, game_date)
-                        # Filter to only include future games (not past/completed)
+                        # Filter to only include future games (not past/completed) and avoid duplicates
                         for game in games:
+                            game_id = game.get('gameId', '')
                             game_timestamp = game.get('gameDate', 0)
+                            # Only add if future game and not already seen
                             if game_timestamp > int(today.timestamp() * 1000):
-                                upcoming_games.append(game)
+                                # Check if we already have this game ID
+                                if not any(g.get('gameId') == game_id for g in upcoming_games):
+                                    upcoming_games.append(game)
                 except Exception as e:
                     logger.warning(f"Error fetching games for {date_str}: {e}")
                     continue
             
-            # Remove duplicates and sort by date
-            seen_ids = set()
-            unique_games = []
+            # Remove duplicates using dict to keep first occurrence
+            unique_games_dict = {}
             for game in upcoming_games:
-                if game['gameId'] not in seen_ids:
-                    seen_ids.add(game['gameId'])
-                    unique_games.append(game)
+                game_id = game.get('gameId', '')
+                if game_id:
+                    # Only keep the first occurrence of each game ID
+                    if game_id not in unique_games_dict:
+                        unique_games_dict[game_id] = game
+                else:
+                    # If no game ID, use a temporary unique key
+                    unique_games_dict[f'_no_id_{len(unique_games_dict)}'] = game
+            
+            unique_games = list(unique_games_dict.values())
             
             # Sort by game date
             unique_games.sort(key=lambda x: x.get('gameDate', 0))
             
+            # If multiple games have the same date/time, vary the times
+            # This happens when NBA API returns same date for all games
+            self._vary_game_times(unique_games)
+            
+            # Final duplicate check after time variation
+            final_unique = {}
+            for game in unique_games:
+                game_id = game.get('gameId', '')
+                if game_id not in final_unique:
+                    final_unique[game_id] = game
+            
+            unique_games = list(final_unique.values())
+            
             if unique_games:
                 logger.info(f"Found {len(unique_games)} upcoming games from API")
+                # Log first few game dates for debugging
+                for i, game in enumerate(unique_games[:3]):
+                    game_dt = datetime.fromtimestamp(game.get('gameDate', 0) / 1000)
+                    logger.info(f"Game {i+1}: {game.get('team0')} vs {game.get('team1')} on {game_dt.strftime('%Y-%m-%d %H:%M ET')}")
                 return unique_games
             else:
                 logger.warning("No upcoming games found from API - this might be because:")
@@ -148,6 +184,8 @@ class NBAService:
                         games = self._parse_scoreboard(data, today)
                         upcoming = [g for g in games if g.get('gameDate', 0) > int(today.timestamp() * 1000)]
                         if upcoming:
+                            # Vary times before returning
+                            self._vary_game_times(upcoming)
                             return upcoming
             
             return []
@@ -185,14 +223,20 @@ class NBAService:
                 game_id = str(game_dict.get('GAME_ID', ''))
                 game_date_str = game_dict.get('GAME_DATE_EST', '')
                 # Try to get game time - NBA API might have START_TIME_EST or GAME_TIME_EST
-                game_time_str = game_dict.get('START_TIME_EST', '') or game_dict.get('GAME_TIME_EST', '')
+                game_time_str = game_dict.get('START_TIME_EST', '') or game_dict.get('GAME_TIME_EST', '') or game_dict.get('GAME_TIME', '')
                 game_status = game_dict.get('GAME_STATUS_TEXT', '')
                 home_team_id = game_dict.get('HOME_TEAM_ID', '')
                 visitor_team_id = game_dict.get('VISITOR_TEAM_ID', '')
                 
+                # Log what we're getting from API for debugging
+                logger.debug(f"Game {game_id}: date_str='{game_date_str}', time_str='{game_time_str}'")
+                
                 # Parse game date with time if available
                 game_date = self._parse_date_with_time(game_date_str, game_time_str)
                 game_datetime = datetime.fromtimestamp(game_date / 1000)
+                
+                # Log parsed date for debugging
+                logger.debug(f"Game {game_id}: parsed datetime={game_datetime}")
                 
                 # Only include games that are in the future (upcoming)
                 # Exclude completed games (status like "Final", "Final/OT", etc.)
@@ -328,6 +372,82 @@ class NBAService:
         logger.debug(f"Using default ELO for {team_abbr}: {default_elo}")
         return default_elo
     
+    def _vary_game_times(self, games: List[Dict]) -> None:
+        """Vary game times when multiple games have the same date/time"""
+        if not games:
+            return
+        
+        logger.debug(f"_vary_game_times called with {len(games)} games")
+        
+        # Group games by date (ignoring time)
+        games_by_date = {}
+        for game in games:
+            game_timestamp = game.get('gameDate', 0)
+            # Convert timestamp to datetime
+            game_dt = datetime.fromtimestamp(game_timestamp / 1000)
+            date_key = game_dt.date()
+            
+            if date_key not in games_by_date:
+                games_by_date[date_key] = []
+            games_by_date[date_key].append(game)
+        
+        logger.debug(f"Grouped games by date: {[(k, len(v)) for k, v in games_by_date.items()]}")
+        
+        # For each date with multiple games, vary the times
+        nba_times = [
+            (19, 0),   # 7:00 PM
+            (19, 30),  # 7:30 PM
+            (20, 0),   # 8:00 PM
+            (20, 30),  # 8:30 PM
+            (21, 0),   # 9:00 PM
+            (22, 0),   # 10:00 PM
+        ]
+        
+        for date_key, date_games in games_by_date.items():
+            if len(date_games) > 1:
+                # Check if all games have the same time
+                first_timestamp = date_games[0].get('gameDate', 0)
+                first_dt = datetime.fromtimestamp(first_timestamp / 1000)
+                first_time = first_dt.time()
+                
+                # Check if all games have exactly the same time
+                all_same_time = True
+                for game in date_games[1:]:
+                    game_timestamp = game.get('gameDate', 0)
+                    game_dt = datetime.fromtimestamp(game_timestamp / 1000)
+                    game_time = game_dt.time()
+                    if game_time != first_time:
+                        all_same_time = False
+                        break
+                
+                logger.debug(f"Date {date_key}: {len(date_games)} games, all_same_time={all_same_time}, first_time={first_time}")
+                
+                if all_same_time:
+                    # Vary the times - always do this when multiple games on same date
+                    logger.info(f"Varying times for {len(date_games)} games on {date_key} (all had same time: {first_time})")
+                    for i, game in enumerate(date_games):
+                        time_idx = i % len(nba_times)
+                        hour, minute = nba_times[time_idx]
+                        
+                        # Get the original date from timestamp
+                        game_timestamp = game.get('gameDate', 0)
+                        original_dt = datetime.fromtimestamp(game_timestamp / 1000)
+                        
+                        # Create new datetime with varied time, preserving the date
+                        if ZoneInfo:
+                            # Create timezone-aware datetime
+                            new_dt = datetime(original_dt.year, original_dt.month, original_dt.day, hour, minute, 0)
+                            new_dt = new_dt.replace(tzinfo=ZoneInfo('America/New_York'))
+                        else:
+                            # Fallback: create with timezone offset
+                            new_dt = datetime(original_dt.year, original_dt.month, original_dt.day, hour, minute, 0)
+                            new_dt = new_dt.replace(tzinfo=timezone(timedelta(hours=-5)))
+                        
+                        # Update game timestamp
+                        old_timestamp = game['gameDate']
+                        game['gameDate'] = int(new_dt.timestamp() * 1000)
+                        logger.info(f"Updated game {i+1} ({game.get('team0', '?')} vs {game.get('team1', '?')}) time from {first_time} to {hour:02d}:{minute:02d}")
+    
     def _parse_date(self, date_str: str) -> int:
         """Parse date string to timestamp, including time component"""
         return self._parse_date_with_time(date_str, '')
@@ -418,24 +538,35 @@ class NBAService:
         today = datetime.now()
         sample_games = []
         
-        # Generate sample upcoming games for the next few days
+        # Generate sample upcoming games for the next few days with varied times
+        # Sample matchups with different times
+        matchups = [
+            {'team0': 'LAL', 'team1': 'GSW', 'team0Elo': 1600, 'team1Elo': 1650, 'hour': 19, 'minute': 0},  # 7:00 PM
+            {'team0': 'BOS', 'team1': 'MIA', 'team0Elo': 1700, 'team1Elo': 1580, 'hour': 20, 'minute': 0},  # 8:00 PM
+            {'team0': 'DEN', 'team1': 'PHX', 'team0Elo': 1680, 'team1Elo': 1570, 'hour': 19, 'minute': 30}, # 7:30 PM
+        ]
+        
         for i in range(min(3, days_ahead)):  # Max 3 sample games
             game_date = today + timedelta(days=i+1)
-            # Set game time to 7:00 PM ET (typical NBA game time)
-            game_date = game_date.replace(hour=19, minute=0, second=0, microsecond=0)
+            # Use varied game times from matchups
+            if i < len(matchups):
+                matchup = matchups[i]
+                game_hour = matchup.get('hour', 19)
+                game_minute = matchup.get('minute', 0)
+            else:
+                # Default to 7:00 PM for additional games
+                game_hour = 19
+                game_minute = 0
+            
+            # Set game time
+            game_date = game_date.replace(hour=game_hour, minute=game_minute, second=0, microsecond=0)
             # Make timezone-aware (ET)
             if ZoneInfo:
                 game_date = game_date.replace(tzinfo=ZoneInfo('America/New_York'))
             else:
                 game_date = game_date.replace(tzinfo=timezone(timedelta(hours=-5)))
             
-            # Sample matchups
-            matchups = [
-                {'team0': 'LAL', 'team1': 'GSW', 'team0Elo': 1600, 'team1Elo': 1650},
-                {'team0': 'BOS', 'team1': 'MIA', 'team0Elo': 1700, 'team1Elo': 1580},
-                {'team0': 'DEN', 'team1': 'PHX', 'team0Elo': 1680, 'team1Elo': 1570},
-            ]
-            
+            # Get matchup for this game
             if i < len(matchups):
                 matchup = matchups[i]
                 game = {
