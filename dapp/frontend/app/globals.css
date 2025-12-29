@@ -26,3 +26,15 @@ body {
     rgb(var(--background-start-rgb));
 }
 
+/* Ensure RainbowKit ConnectButton is visible */
+[data-rk] {
+  z-index: 50 !important;
+}
+
+/* Make sure the connect button wrapper is visible */
+button[data-testid="rk-connect-button"],
+div[data-testid="rk-connect-button"] {
+  z-index: 50 !important;
+  position: relative !important;
+}
+

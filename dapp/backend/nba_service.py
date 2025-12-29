@@ -4,10 +4,18 @@ NO API KEY REQUIRED - Free public API
 """
 import requests
 from typing import List, Dict, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import logging
 import pandas as pd
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    # Python < 3.9 fallback
+    try:
+        from backports.zoneinfo import ZoneInfo
+    except ImportError:
+        ZoneInfo = None
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -176,12 +184,14 @@ class NBAService:
                 # Extract game info
                 game_id = str(game_dict.get('GAME_ID', ''))
                 game_date_str = game_dict.get('GAME_DATE_EST', '')
+                # Try to get game time - NBA API might have START_TIME_EST or GAME_TIME_EST
+                game_time_str = game_dict.get('START_TIME_EST', '') or game_dict.get('GAME_TIME_EST', '')
                 game_status = game_dict.get('GAME_STATUS_TEXT', '')
                 home_team_id = game_dict.get('HOME_TEAM_ID', '')
                 visitor_team_id = game_dict.get('VISITOR_TEAM_ID', '')
                 
-                # Parse game date
-                game_date = self._parse_date(game_date_str)
+                # Parse game date with time if available
+                game_date = self._parse_date_with_time(game_date_str, game_time_str)
                 game_datetime = datetime.fromtimestamp(game_date / 1000)
                 
                 # Only include games that are in the future (upcoming)
@@ -319,13 +329,83 @@ class NBAService:
         return default_elo
     
     def _parse_date(self, date_str: str) -> int:
-        """Parse date string to timestamp"""
+        """Parse date string to timestamp, including time component"""
+        return self._parse_date_with_time(date_str, '')
+    
+    def _parse_date_with_time(self, date_str: str, time_str: str = '') -> int:
+        """Parse date string to timestamp, including time component if provided"""
         try:
-            # Format: "2024-12-24T00:00:00"
-            dt = datetime.strptime(date_str.split('T')[0], '%Y-%m-%d')
-            return int(dt.timestamp() * 1000)
-        except:
-            return int(datetime.now().timestamp() * 1000)
+            # Parse the date part
+            if not date_str:
+                raise ValueError("Empty date string")
+            
+            # GAME_DATE_EST format is typically "2024-12-24" (date only)
+            # Try different date formats
+            dt = None
+            date_formats = [
+                '%Y-%m-%d',           # 2024-12-24
+                '%Y-%m-%dT%H:%M:%S',  # 2024-12-24T19:30:00
+                '%m/%d/%Y',           # 12/24/2024
+            ]
+            
+            for fmt in date_formats:
+                try:
+                    dt = datetime.strptime(date_str.split('T')[0].split(' ')[0], fmt)
+                    break
+                except:
+                    continue
+            
+            if dt is None:
+                raise ValueError(f"Could not parse date: {date_str}")
+            
+            # If time string is provided, parse it
+            if time_str:
+                try:
+                    # Time format might be "7:00 PM ET" or "19:00:00" or "7:00PM"
+                    time_str_clean = time_str.upper().replace('ET', '').replace('EST', '').strip()
+                    if 'PM' in time_str_clean or 'AM' in time_str_clean:
+                        # Parse 12-hour format
+                        try:
+                            time_part = datetime.strptime(time_str_clean, '%I:%M %p').time()
+                            dt = dt.replace(hour=time_part.hour, minute=time_part.minute, second=0)
+                        except:
+                            # Try without space
+                            time_part = datetime.strptime(time_str_clean.replace(' ', ''), '%I:%M%p').time()
+                            dt = dt.replace(hour=time_part.hour, minute=time_part.minute, second=0)
+                    else:
+                        # Parse 24-hour format
+                        time_parts = time_str_clean.split(':')
+                        if len(time_parts) >= 2:
+                            hour = int(time_parts[0])
+                            minute = int(time_parts[1])
+                            dt = dt.replace(hour=hour, minute=minute, second=0)
+                except Exception as e:
+                    logger.debug(f"Could not parse time '{time_str}', using default: {e}")
+                    # Default to 7:00 PM ET if time parsing fails
+                    dt = dt.replace(hour=19, minute=0, second=0)
+            else:
+                # No time provided, default to 7:00 PM ET (typical NBA game time)
+                dt = dt.replace(hour=19, minute=0, second=0)
+            
+            # Make datetime timezone-aware (ET/EST)
+            if ZoneInfo:
+                # Use zoneinfo (Python 3.9+)
+                dt_et = dt.replace(tzinfo=ZoneInfo('America/New_York'))
+                return int(dt_et.timestamp() * 1000)
+            else:
+                # Fallback: assume ET is UTC-5 (EST) or UTC-4 (EDT)
+                # For simplicity, use UTC-5 (EST) - this is approximate
+                dt_utc = dt.replace(tzinfo=timezone(timedelta(hours=-5)))
+                return int(dt_utc.timestamp() * 1000)
+        except Exception as e:
+            logger.warning(f"Error parsing date '{date_str}' with time '{time_str}': {e}")
+            # Default to today at 7:00 PM ET
+            if ZoneInfo:
+                default_dt = datetime.now(ZoneInfo('America/New_York')).replace(hour=19, minute=0, second=0, microsecond=0)
+                return int(default_dt.timestamp() * 1000)
+            else:
+                default_dt = datetime.now(timezone(timedelta(hours=-5))).replace(hour=19, minute=0, second=0, microsecond=0)
+                return int(default_dt.timestamp() * 1000)
     
     def _get_games_fallback(self, days_ahead: int) -> List[Dict]:
         """Fallback method - returns sample upcoming games when API doesn't return data"""
@@ -341,6 +421,13 @@ class NBAService:
         # Generate sample upcoming games for the next few days
         for i in range(min(3, days_ahead)):  # Max 3 sample games
             game_date = today + timedelta(days=i+1)
+            # Set game time to 7:00 PM ET (typical NBA game time)
+            game_date = game_date.replace(hour=19, minute=0, second=0, microsecond=0)
+            # Make timezone-aware (ET)
+            if ZoneInfo:
+                game_date = game_date.replace(tzinfo=ZoneInfo('America/New_York'))
+            else:
+                game_date = game_date.replace(tzinfo=timezone(timedelta(hours=-5)))
             
             # Sample matchups
             matchups = [

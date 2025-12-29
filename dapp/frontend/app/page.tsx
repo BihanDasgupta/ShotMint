@@ -110,50 +110,65 @@ export default function Home() {
   }, [games.length]); // Only depend on games.length to avoid infinite loops
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900">
+    <main className="min-h-screen bg-gradient-to-br from-emerald-950 via-green-900 to-teal-900">
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
         <header className="mb-8">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-5xl font-bold text-white mb-2">
-                🏀 ShotMint
-              </h1>
-              <p className="text-xl text-blue-200">
-                AI-Powered NBA Betting dApp
-              </p>
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="min-w-0">
+                <h1 className="text-4xl md:text-5xl font-bold text-amber-300 mb-2">
+                  ShotMint
+                </h1>
+                <p className="text-lg md:text-xl text-emerald-200">
+                  Get AI-Predictions and Place NBA Moneyline Bets
+                </p>
+              </div>
             </div>
-            <ConnectButton />
+            <div className="flex-shrink-0 z-50 relative">
+              <ConnectButton />
+            </div>
           </div>
         </header>
 
         {/* Stats Banner */}
-        <div className="bg-white/10 backdrop-blur-lg rounded-lg p-6 mb-8 border border-white/20">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-emerald-500/10 backdrop-blur-xl rounded-xl p-4 md:p-6 mb-8 border border-emerald-400/30 shadow-lg shadow-emerald-900/20">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             <div className="text-center">
-              <div className="text-3xl font-bold text-white">
+              <div className="text-2xl md:text-3xl font-bold text-amber-300">
                 {predictions.length}
               </div>
-              <div className="text-blue-200">Games Analyzed</div>
+              <div className="text-emerald-200 text-xs md:text-sm">Games Analyzed</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold text-white">
+              <div className="text-2xl md:text-3xl font-bold text-amber-300">
                 {predictions.filter((p) => p.confidence > 0.7).length}
               </div>
-              <div className="text-blue-200">High Confidence</div>
+              <div className="text-emerald-200 text-xs md:text-sm">High Confidence</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold text-white">
+              <div className="text-2xl md:text-3xl font-bold text-amber-300">
                 {isConnected ? '✅' : '❌'}
               </div>
-              <div className="text-blue-200">Wallet Status</div>
+              <div className="text-emerald-200 text-xs md:text-sm">Wallet Status</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold text-white">RNN</div>
-              <div className="text-blue-200">AI Model</div>
+              <div className="text-xl md:text-2xl lg:text-3xl font-bold text-amber-300 break-words overflow-wrap-anywhere">
+                MintShooteRNN
+              </div>
+              <div className="text-emerald-200 text-sm">RNN Model</div>
             </div>
           </div>
         </div>
+
+        {/* Wallet Connection Message - Above Games */}
+        {!isConnected && (
+          <div className="mb-6 bg-yellow-500/20 backdrop-blur-sm border border-yellow-500/50 rounded-lg p-4 text-center">
+            <p className="text-yellow-200">
+              🔒 Connect your wallet to place bets
+            </p>
+          </div>
+        )}
 
         {/* Games Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -162,7 +177,7 @@ export default function Home() {
             return (
               <div
                 key={game.gameId || index}
-                className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20 hover:bg-white/15 transition-all"
+                className="bg-emerald-500/10 backdrop-blur-xl rounded-xl p-6 border border-emerald-400/30 hover:bg-emerald-500/15 hover:border-emerald-400/50 transition-all shadow-lg shadow-emerald-900/10"
               >
                 <GameCard game={game} />
                 {prediction && (
@@ -178,18 +193,18 @@ export default function Home() {
                   </div>
                 )}
                 {!prediction && loading && (
-                  <div className="mt-4 text-center text-blue-200">
+                  <div className="mt-4 text-center text-emerald-200">
                     🤖 Loading AI prediction...
                   </div>
                 )}
                 {!prediction && !loading && (
                   <div className="mt-4 space-y-2">
-                    <div className="text-center text-yellow-200 text-sm bg-yellow-500/10 p-3 rounded-lg">
+                    <div className="text-center text-yellow-200 text-sm bg-yellow-500/20 backdrop-blur-sm p-3 rounded-lg border border-yellow-500/30">
                       ⚠️ Prediction not available
                     </div>
                     <button
                       onClick={() => fetchPredictions()}
-                      className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm"
+                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-amber-300 rounded-lg text-sm font-semibold transition-all shadow-md shadow-emerald-900/30"
                     >
                       🔄 Retry Prediction
                     </button>
@@ -199,14 +214,6 @@ export default function Home() {
             );
           })}
         </div>
-
-        {!isConnected && (
-          <div className="mt-8 bg-yellow-500/20 border border-yellow-500/50 rounded-lg p-4 text-center">
-            <p className="text-yellow-200">
-              🔒 Connect your wallet to place bets
-            </p>
-          </div>
-        )}
       </div>
     </main>
   );
