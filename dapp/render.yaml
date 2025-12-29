@@ -6,9 +6,12 @@ services:
     runtime: python
     plan: free
     rootDir: dapp/backend
-    buildCommand: pip install --upgrade pip setuptools wheel && pip install --no-build-isolation -r requirements.txt
+    buildCommand: pip install --upgrade pip setuptools wheel mesonpy && pip install --no-build-isolation -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.0"
+        sync: false
       - key: ALLOWED_ORIGINS
         value: "*"
         sync: false
