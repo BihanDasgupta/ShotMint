@@ -8,8 +8,13 @@ import GameCard from './components/GameCard';
 import PredictionDisplay from './components/PredictionDisplay';
 import BettingInterface from './components/BettingInterface';
 
-// Get API URL - log it for debugging
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Get API URL - remove trailing slash to avoid double slashes
+const getApiUrl = () => {
+  const url = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  return url.replace(/\/+$/, ''); // Remove trailing slashes
+};
+
+const API_URL = getApiUrl();
 
 // Log API URL on component mount (for debugging)
 if (typeof window !== 'undefined') {

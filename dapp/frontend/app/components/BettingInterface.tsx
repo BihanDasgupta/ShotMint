@@ -6,7 +6,12 @@ import { parseEther } from 'viem';
 import axios from 'axios';
 
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || '0x0000000000000000000000000000000000000000';
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Remove trailing slash to avoid double slashes
+const getApiUrl = () => {
+  const url = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  return url.replace(/\/+$/, '');
+};
+const API_URL = getApiUrl();
 
 // ABI for the betting contract (simplified)
 const CONTRACT_ABI = [
