@@ -6,9 +6,15 @@ import { mainnet, sepolia, hardhat } from 'wagmi/chains';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@rainbow-me/rainbowkit/styles.css';
 
+// Validate WalletConnect project ID
+const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+if (!walletConnectProjectId || walletConnectProjectId === 'your-project-id') {
+  console.warn('⚠️ NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is not set or is a placeholder. Wallet connection may not work.');
+}
+
 const config = getDefaultConfig({
   appName: 'ShotMint',
-  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'your-project-id',
+  projectId: walletConnectProjectId || 'your-project-id', // Will show error if not set
   chains: [mainnet, sepolia, hardhat],
   ssr: true,
 });
